@@ -1,0 +1,6 @@
+[submodule "zab"]
+	path = zab
+	url = https://github.com/Donald-Rupin/zab.git
+[submodule "asio"]
+	path = asio
+	url = git@github.com:chriskohlhoff/asio.git
