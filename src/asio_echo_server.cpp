@@ -9,8 +9,10 @@
 //
 
 #include <cstdlib>
+#include <deque>
 #include <iostream>
 #include <memory>
+#include <thread>
 #include <utility>
 
 #include "asio.hpp"
@@ -20,7 +22,7 @@ using asio::ip::tcp;
 class session : public std::enable_shared_from_this<session> {
     public:
 
-        session(tcp::socket socket) : socket_(std::move(socket)) { }
+        session(tcp::socket socket) : data_(65534), socket_(std::move(socket)) { }
 
         void
         start()
@@ -33,40 +35,35 @@ class session : public std::enable_shared_from_this<session> {
         void
         do_read()
         {
-            std::vector<char> data(65534);
-            auto              b = asio::buffer(data.data(), data.size());
-
             auto self(shared_from_this());
             socket_.async_read_some(
-                b,
-                [this, data = std::move(data), self](std::error_code ec, auto length) mutable
+                asio::buffer(data_.data(), data_.size()),
+                [this, self](std::error_code ec, auto length) mutable
                 {
-                    if (!ec)
-                    {
-
-                        data.resize(length);
-                        do_write(std::move(data));
-                        do_read();
-                    }
+                    if (!ec) { do_write(length); }
                 });
         }
 
         void
-        do_write(std::vector<char>&& _data)
+        do_write(std::size_t _length)
         {
-            auto b = asio::buffer(_data.data(), _data.size());
-
             auto self(shared_from_this());
             asio::async_write(
                 socket_,
-                b,
-                [this, self, _data = std::move(_data)](std::error_code ec, auto) mutable
+                asio::buffer(data_.data(), _length),
+                [this, self](std::error_code ec, auto) mutable
                 {
-                    if (ec) { abort(); }
+                    if (!ec) { do_read(); }
+                    else
+                    {
+                        abort();
+                    }
                 });
         }
 
-        tcp::socket socket_;
+        std::vector<char> data_;
+        bool              writing_ = false;
+        tcp::socket       socket_;
 };
 
 class server {
@@ -108,14 +105,25 @@ main(int _argc, const char** _argv)
     auto port = std::stoi(_argv[1]);
 
     std::cout << " ** Running echo server on port " << port << " ** \n";
-
+    std::vector<std::jthread> theads;
     try
     {
         asio::io_context io_context;
 
         server s(io_context, port);
 
-        io_context.run();
+        auto hc = std::thread::hardware_concurrency();
+        if (!hc) { hc = 1; }
+
+        for (auto i = 0u; i < hc; i++)
+        {
+            theads.emplace_back([&io_context]() { io_context.run(); });
+        }
+
+        for (auto& t : theads)
+        {
+            if (t.joinable()) { t.join(); }
+        }
 
     } catch (std::exception& e)
     {

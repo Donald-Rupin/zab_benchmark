@@ -37,6 +37,8 @@
 #ifndef ZAB_BM_ECHO_SERVER_HPP_
 #define ZAB_BM_ECHO_SERVER_HPP_
 
+#include <chrono>
+
 #include "zab/async_function.hpp"
 #include "zab/engine.hpp"
 #include "zab/engine_enabled.hpp"
@@ -53,16 +55,16 @@ namespace zab_bm {
 
             echo_server(zab::engine* _e, std::uint16_t _port);
 
-            zab::async_function<>
-            run_acceptor() noexcept;
+            void
+            initialise() noexcept;
 
         private:
 
             zab::async_function<>
-            run_stream(int _connection_count, zab::tcp_stream _stream) noexcept;
+            run_acceptor() noexcept;
 
             zab::async_function<>
-            write_stream(std::vector<char> _data, zab::tcp_stream& _stream) noexcept;
+            run_stream(int _connection_count, zab::tcp_stream _stream) noexcept;
 
             zab::tcp_acceptor acceptor_;
 
@@ -81,17 +83,21 @@ main(int _argc, const char** _argv)
         return 1;
     }
 
-    auto port = std::stoi(_argv[1]);
+    {
+        auto port = std::stoi(_argv[1]);
 
-    std::cout << " ** Running echo server on port " << port << " ** \n";
+        std::cout << " ** Running echo server on port " << port << " ** \n";
 
-    zab::engine e(zab::event_loop::configs{});
+        zab::engine e(zab::engine::configs{
+            .threads_         = 0,
+            .opt_             = zab::engine::configs::kAny,
+            .affinity_set_    = false,
+            .affinity_offset_ = 0});
 
-    zab_bm::echo_server es(&e, port);
+        zab_bm::echo_server es(&e, port);
 
-    es.run_acceptor();
-
-    e.start();
+        e.start();
+    }
 
     return 0;
 }

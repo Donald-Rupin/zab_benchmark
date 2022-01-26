@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <thread>
 
 #include "asio.hpp"
 
@@ -148,9 +149,9 @@ class clients {
             auto total_time =
                 std::chrono::duration_cast<std::chrono::milliseconds>(t_end - start_).count();
 
-            std::uint64_t mb_sent = (bs_.meesage_count_ * bs_.message_size_ * 2) / (1024 * 1024);
-            std::uint64_t av_time_seconds    = average_time / 1000;
-            std::uint64_t total_time_seconds = total_time / 1000;
+            double mb_sent = (bs_.meesage_count_ * bs_.message_size_ * 2) / (1024.0 * 1024.0);
+            double av_time_seconds    = average_time / 1000.0;
+            double total_time_seconds = total_time / 1000.0;
 
             std::cout << " ------------------ \n";
             std::cout << " ** Benchmark Results ** \n";
@@ -158,13 +159,10 @@ class clients {
             std::cout << "Total time: " << total_time << "\n";
             std::cout << "IO per connection: " << mb_sent << " Mbs\n";
             std::cout << "IO in total: " << (bs_.connection_count_ * mb_sent) << " Mbs\n";
-            std::cout << "Average throughput per connection: "
-                      << (av_time_seconds ? (mb_sent / av_time_seconds) : mb_sent) << " Mb/s\n";
-            std::cout << "Total throughput: "
-                      << (total_time_seconds
-                              ? ((bs_.connection_count_ * mb_sent)) / total_time_seconds
-                              : (bs_.connection_count_ * mb_sent))
+            std::cout << "Average throughput per connection: " << mb_sent / av_time_seconds
                       << " Mb/s\n";
+            std::cout << "Total throughput: "
+                      << (bs_.connection_count_ * mb_sent) / total_time_seconds << " Mb/s\n";
             std::cout << " ------------------ \n";
         }
 
@@ -197,11 +195,17 @@ class clients {
 
                                         ses->start();
                                     }
+                                    else
+                                    {
+                                        std::cout << "connect failed: " << ec << "\n";
+                                        io_.stop();
+                                    }
                                 });
                         }
                     }
                     else
                     {
+                        std::cout << "resolve failed: " << ec << "\n";
                         io_.stop();
                     }
                 });
@@ -253,7 +257,20 @@ main(int _argc, char* _argv[])
 
         clients c(bs, io_context, address, port);
 
-        io_context.run();
+        std::vector<std::jthread> theads;
+
+        auto hc = std::thread::hardware_concurrency();
+        if (!hc) { hc = 1; }
+
+        for (auto i = 0u; i < hc; i++)
+        {
+            theads.emplace_back([&io_context]() { io_context.run(); });
+        }
+
+        for (auto& t : theads)
+        {
+            if (t.joinable()) { t.join(); }
+        }
 
         c.print_results();
 

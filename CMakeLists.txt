@@ -10,12 +10,22 @@ cmake_minimum_required(VERSION 3.7...3.18 FATAL_ERROR)
 
 project(ZAB, CXX)
 
-set(CMAKE_CXX_FLAGS_DEBUG "-DDEBUG -O0 -g")
+
+include(CheckIPOSupported)
+check_ipo_supported(RESULT LTO_SUPPORT OUTPUT ERROR)
+
+if( LTO_SUPPORT )
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+endif()
+
+set(CMAKE_CXX_FLAGS_DEBUG "-DDEBUG -Og -g")
 set(CMAKE_CXX_FLAGS_RELEASE "-DRELEASE -O3 -g")
 
 set(CMAKE_CXX_STANDARD 20)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pedantic -Wall -fuse-linker-plugin -D_FILE_OFFSET_BITS=64")
+
+message(STATUS "Compiling with flags ${CMAKE_CXX_FLAGS}")
 
 add_subdirectory(zab)
 
@@ -27,20 +37,26 @@ macro(add_zab_build name file)
 
     target_compile_options(${name} PUBLIC
         -fcoroutines
-        -g
         -pthread
         -Wall
         -Wextra
+        -g
     )
 
     target_include_directories(${name} PUBLIC
         includes
         zab/includes
+        ${CMAKE_CURRENT_SOURCE_DIR}/zab/liburing/src/include
     )
 
     target_link_libraries(
         ${name} PUBLIC
-         zab -lpthread -latomic
+         zab -lpthread -latomic uring
+    )
+
+    target_link_directories(
+        ${name} PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/zab/liburing/src
     )
 
 endmacro()
@@ -52,21 +68,27 @@ macro(add_asio_build name file)
     add_executable(${name} src/${file}.cpp)
 
     target_compile_options(${name} PUBLIC
-        -g
         -pthread
         -Wall
         -Wextra
+        -g
+        
     )
 
     target_include_directories(${name} PUBLIC
         asio/asio/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/zab/liburing/src/include
     )
 
     target_link_libraries(
         ${name} PUBLIC
-         -lpthread -latomic
+         -lpthread -latomic uring
     )
 
+    target_link_directories(
+        ${name} PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/zab/liburing/src
+    )
 endmacro()
 
 add_zab_build(server echo_server)
