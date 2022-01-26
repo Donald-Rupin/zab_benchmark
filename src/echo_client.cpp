@@ -60,7 +60,7 @@ namespace zab_bm {
 
         auto stream_opt = co_await con.connect(_details, _size);
 
-        if (stream_opt) { co_return co_await run_stream(std::move(*stream_opt)); }
+        if (stream_opt) { co_return co_await run_stream(_thread, std::move(*stream_opt)); }
         else
         {
             std::cout << con.last_error() << " (1)\n";
@@ -69,7 +69,7 @@ namespace zab_bm {
     }
 
     zab::simple_future<bool>
-    echo_client::run_stream(zab::tcp_stream _stream) noexcept
+    echo_client::run_stream(zab::thread_t, zab::tcp_stream _stream) noexcept
     {
         std::vector<char> buffer(message_size_, 42);
         for (auto i = 0ull; i < meesage_count_; ++i)
@@ -78,16 +78,10 @@ namespace zab_bm {
             auto [_, amount] =
                 co_await zab::wait_for(engine_, _stream.write(buffer), _stream.read(buffer));
 
-            if (_stream.last_error()) [[unlikely]]
-            {
-                std::cout << _stream.last_error() << " (2)\n";
-                co_return false;
-            }
-
-            /* Read */
             if (_stream.last_error() || amount != message_size_) [[unlikely]]
             {
-                std::cout << _stream.last_error() << " (3)\n";
+                std::cout << _stream.last_error() << " (2)\n";
+                std::cout << amount << " vs " << message_size_ << " (2)\n";
                 co_return false;
             }
         }

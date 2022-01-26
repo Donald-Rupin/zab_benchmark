@@ -72,7 +72,7 @@ namespace zab_bm {
         private:
 
             zab::simple_future<bool>
-            run_stream(zab::tcp_stream _stream) noexcept;
+            run_stream(zab::thread_t _thread, zab::tcp_stream _stream) noexcept;
 
             const std::size_t meesage_count_;
 
@@ -132,7 +132,7 @@ namespace zab_bm {
             co_return;
         }
 
-        auto num_threads = _engine->get_event_loop().number_of_workers();
+        auto num_threads = _engine->number_of_workers();
 
         std::vector<zab::simple_future<std::size_t>> futures;
 
@@ -199,9 +199,9 @@ namespace zab_bm {
 
         total_time = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count();
 
-        std::size_t mb_sent            = (_meesage_count * _message_size * 2) / (1024 * 1024);
-        std::size_t av_time_seconds    = average_time / 1000;
-        std::size_t total_time_seconds = total_time / 1000;
+        double mb_sent            = (_meesage_count * _message_size * 2) / (1024.0 * 1024.0);
+        double av_time_seconds    = average_time / 1000.0;
+        double total_time_seconds = total_time / 1000.0;
 
         std::cout << " ------------------ \n";
         std::cout << " ** Benchmark Results ** \n";
@@ -209,13 +209,12 @@ namespace zab_bm {
         std::cout << "Total time: " << total_time << "\n";
         std::cout << "IO per connection: " << mb_sent << " Mbs\n";
         std::cout << "IO in total: " << (_connector_count * mb_sent) << " Mbs\n";
-        std::cout << "Average throughput per connection: "
-                  << (av_time_seconds ? (mb_sent / av_time_seconds) : mb_sent) << " Mb/s\n";
-        std::cout << "Total throughput: "
-                  << (total_time_seconds ? ((_connector_count * mb_sent)) / total_time_seconds
-                                         : (_connector_count * mb_sent))
+        std::cout << "Average throughput per connection: " << mb_sent / av_time_seconds
+                  << " Mb/s\n";
+        std::cout << "Total throughput: " << (_connector_count * mb_sent) / total_time_seconds
                   << " Mb/s\n";
         std::cout << " ------------------ \n";
+
         _engine->stop();
     }
 
@@ -239,7 +238,11 @@ main(int _argc, const char** _argv)
     std::size_t messages     = std::stoi(_argv[4]);
     std::size_t message_size = ((std::size_t) std::stoi(_argv[5])) * 1024;
 
-    zab::engine e(zab::event_loop::configs{});
+    zab::engine e(zab::engine::configs{
+        .threads_         = 0,
+        .opt_             = zab::engine::configs::kAny,
+        .affinity_set_    = false,
+        .affinity_offset_ = 0});
 
     zab_bm::run_benchmark(&e, port, address, connectors, messages, message_size);
 

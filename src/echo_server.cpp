@@ -33,8 +33,15 @@
  *  @file echo_server.cpp
  *
  */
-
 #include "echo_server.hpp"
+
+#include <chrono>
+#include <cstring>
+#include <cxxabi.h>     // for __cxa_demangle
+#include <execinfo.h>   // for backtrace
+#include <malloc.h>
+#include <sstream>
+#include <string>
 
 #include "zab/event_loop.hpp"
 #include "zab/for_each.hpp"
@@ -45,26 +52,45 @@ namespace zab_bm {
     echo_server::echo_server(zab::engine* _e, std::uint16_t _port) : acceptor_(_e), port_(_port)
     {
         register_engine(*_e);
+
+        /* Since we will run in an infinite loop use ctr-c to cancel program */
+        _e->get_signal_handler().handle(
+            SIGINT,
+            zab::thread_t{kDefaultThread},
+            [this](int) { engine_->stop(); });
+    }
+
+    void
+    echo_server::initialise() noexcept
+    {
+        run_acceptor();
     }
 
     zab::async_function<>
     echo_server::run_acceptor() noexcept
     {
         int connection_count = 0;
-        if (acceptor_.listen(AF_INET, port_, 10000))
+        if (acceptor_.listen(AF_INET, port_, 50000))
         {
-            std::optional<zab::tcp_stream> stream;
-            while (stream = co_await acceptor_.accept())
-            {
-                run_stream(connection_count++, std::move(*stream));
-                stream.reset();
-            }
-
-            std::cout << "Acceptor errored: " << acceptor_.last_error() << "\n";
+            co_await zab::for_each(
+                acceptor_.get_accepter(),
+                [&](auto&& _stream) noexcept -> zab::for_ctl
+                {
+                    if (_stream)
+                    {
+                        run_stream(connection_count++, std::move(*_stream));
+                        return zab::for_ctl::kContinue;
+                    }
+                    else
+                    {
+                        return zab::for_ctl::kBreak;
+                    }
+                });
         }
         else
         {
             std::cout << "Acceptor errored: " << acceptor_.last_error() << "\n";
+            abort();
         }
 
         engine_->stop();
@@ -73,35 +99,38 @@ namespace zab_bm {
     zab::async_function<>
     echo_server::run_stream(int _connection_count, zab::tcp_stream _stream) noexcept
     {
-        zab::thread_t thread{
-            (std::uint16_t)(_connection_count % engine_->get_event_loop().number_of_workers())};
+        static constexpr auto kBufferSize = 65534;
+
         /* Lets load balance connections between available threads... */
+        zab::thread_t thread{(std::uint16_t)(_connection_count % engine_->number_of_workers())};
         co_await yield(thread);
+
+        std::vector<char>           buffer(kBufferSize);
+        zab::tcp_stream::op_control oc{.data_ = (std::byte*) buffer.data(), .size_ = kBufferSize};
+
+        auto reader = _stream.get_reader(&oc);
+        auto writer = _stream.get_writer(&oc);
 
         while (!_stream.last_error())
         {
-            auto data = co_await _stream.read_some(65534);
+            auto size = co_await reader;
 
-            if (data) { write_stream(std::move(*data), _stream); }
+            if (size && *size)
+            {
+                oc.size_ = *size;
+                co_await writer;
+                oc.size_ = kBufferSize;
+            }
             else
             {
+                if (_stream.last_error())
+                {
+                    std::cout << "Stream failed " << _stream.last_error() << "\n";
+                }
+
                 break;
             }
         }
-
-        _stream.cancel();
-
-        /* Dirty, but easier then tracking writes*/
-        co_await yield(zab::order::seconds(1));
-
-        /* Wait for the stream to shutdown */
-        co_await _stream.shutdown();
-    }
-
-    zab::async_function<>
-    echo_server::write_stream(std::vector<char> _data, zab::tcp_stream& _stream) noexcept
-    {
-        co_await _stream.write(_data);
     }
 
 }   // namespace zab_bm
