@@ -37,8 +37,6 @@
 #include "echo_client.hpp"
 
 #include "zab/event_loop.hpp"
-#include "zab/network_overlay.hpp"
-#include "zab/tcp_stream.hpp"
 
 namespace zab_bm {
 
@@ -56,37 +54,34 @@ namespace zab_bm {
     {
         co_await yield(_thread);
 
-        zab::tcp_connector con(engine_);
+        auto stream =
+            co_await zab::tcp_connect<std::byte>(engine_, (const sockaddr*) _details, _size);
 
-        auto stream_opt = co_await con.connect(_details, _size);
+        if (auto le = stream.last_error(); !le)
+        {
+            std::vector<std::byte> buffer(message_size_, std::byte{42});
+            for (auto i = 0ull; i < meesage_count_; ++i)
+            {
+                /* Write */
+                auto [_, amount] =
+                    co_await zab::wait_for(stream.write(buffer), stream.read(buffer));
 
-        if (stream_opt) { co_return co_await run_stream(_thread, std::move(*stream_opt)); }
+                if (le = stream.last_error(); le || amount != (long long int) message_size_)
+                    [[unlikely]]
+                {
+                    std::cout << le << " (2)\n";
+                    std::cout << amount << " vs " << message_size_ << " (2)\n";
+                    co_return false;
+                }
+            }
+
+            co_return true;
+        }
         else
         {
-            std::cout << con.last_error() << " (1)\n";
+            std::cout << le << " (1)\n";
             co_return false;
         }
-    }
-
-    zab::simple_future<bool>
-    echo_client::run_stream(zab::thread_t, zab::tcp_stream _stream) noexcept
-    {
-        std::vector<char> buffer(message_size_, 42);
-        for (auto i = 0ull; i < meesage_count_; ++i)
-        {
-            /* Write */
-            auto [_, amount] =
-                co_await zab::wait_for(engine_, _stream.write(buffer), _stream.read(buffer));
-
-            if (_stream.last_error() || amount != message_size_) [[unlikely]]
-            {
-                std::cout << _stream.last_error() << " (2)\n";
-                std::cout << amount << " vs " << message_size_ << " (2)\n";
-                co_return false;
-            }
-        }
-
-        co_return true;
     }
 
 }   // namespace zab_bm

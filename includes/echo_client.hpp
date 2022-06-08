@@ -48,9 +48,10 @@
 #include "zab/engine.hpp"
 #include "zab/engine_enabled.hpp"
 #include "zab/for_each.hpp"
-#include "zab/network_overlay.hpp"
 #include "zab/simple_future.hpp"
 #include "zab/strong_types.hpp"
+#include "zab/tcp_networking.hpp"
+#include "zab/tcp_stream.hpp"
 #include "zab/wait_for.hpp"
 
 namespace zab_bm {
@@ -70,9 +71,6 @@ namespace zab_bm {
                 socklen_t                _size) noexcept;
 
         private:
-
-            zab::simple_future<bool>
-            run_stream(zab::thread_t _thread, zab::tcp_stream _stream) noexcept;
 
             const std::size_t meesage_count_;
 
@@ -169,10 +167,7 @@ namespace zab_bm {
                             t_end - t_start)
                             .count();
                     }
-                    else
-                    {
-                        co_return std::nullopt;
-                    }
+                    else { co_return std::nullopt; }
                 }(_engine, &bench_data, zab::thread_t{(std::uint16_t)(i % num_threads)}));
         }
 
@@ -189,10 +184,7 @@ namespace zab_bm {
                 std::cout << "A connection failed."
                           << "\n";
             }
-            else
-            {
-                average_time += *time;
-            }
+            else { average_time += *time; }
         }
 
         average_time = average_time / results.size();

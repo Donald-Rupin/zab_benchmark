@@ -42,8 +42,9 @@
 #include "zab/async_function.hpp"
 #include "zab/engine.hpp"
 #include "zab/engine_enabled.hpp"
-#include "zab/network_overlay.hpp"
 #include "zab/strong_types.hpp"
+#include "zab/tcp_networking.hpp"
+#include "zab/tcp_stream.hpp"
 
 namespace zab_bm {
 
@@ -64,7 +65,7 @@ namespace zab_bm {
             run_acceptor() noexcept;
 
             zab::async_function<>
-            run_stream(int _connection_count, zab::tcp_stream _stream) noexcept;
+            run_stream(int _connection_count, zab::tcp_stream<std::byte> _stream) noexcept;
 
             zab::tcp_acceptor acceptor_;
 

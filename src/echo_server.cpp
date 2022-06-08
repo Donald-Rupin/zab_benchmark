@@ -69,23 +69,21 @@ namespace zab_bm {
     zab::async_function<>
     echo_server::run_acceptor() noexcept
     {
-        int connection_count = 0;
+        int             connection_count = 0;
+        struct sockaddr addr;
+        socklen_t       len = sizeof(addr);
+
         if (acceptor_.listen(AF_INET, port_, 50000))
         {
-            co_await zab::for_each(
-                acceptor_.get_accepter(),
-                [&](auto&& _stream) noexcept -> zab::for_ctl
-                {
-                    if (_stream)
-                    {
-                        run_stream(connection_count++, std::move(*_stream));
-                        return zab::for_ctl::kContinue;
-                    }
-                    else
-                    {
-                        return zab::for_ctl::kBreak;
-                    }
-                });
+            int last_error = 0;
+            while (!(last_error = acceptor_.last_error()))
+            {
+                memset(&addr, 0, len);
+                auto stream = co_await acceptor_.accept<std::byte>(&addr, &len);
+                if (stream) { run_stream(connection_count++, std::move(*stream)); }
+            }
+
+            std::cout << "Acceptor ended with error code: " << last_error << "\n";
         }
         else
         {
@@ -97,7 +95,7 @@ namespace zab_bm {
     }
 
     zab::async_function<>
-    echo_server::run_stream(int _connection_count, zab::tcp_stream _stream) noexcept
+    echo_server::run_stream(int _connection_count, zab::tcp_stream<std::byte> _stream) noexcept
     {
         static constexpr auto kBufferSize = 65534;
 
@@ -105,31 +103,12 @@ namespace zab_bm {
         zab::thread_t thread{(std::uint16_t)(_connection_count % engine_->number_of_workers())};
         co_await yield(thread);
 
-        std::vector<char>           buffer(kBufferSize);
-        zab::tcp_stream::op_control oc{.data_ = (std::byte*) buffer.data(), .size_ = kBufferSize};
-
-        auto reader = _stream.get_reader(&oc);
-        auto writer = _stream.get_writer(&oc);
-
-        while (!_stream.last_error())
+        std::vector<std::byte> buffer(kBufferSize);
+        int                    last_error = 0;
+        while (!(last_error = _stream.last_error()))
         {
-            auto size = co_await reader;
-
-            if (size && *size)
-            {
-                oc.size_ = *size;
-                co_await writer;
-                oc.size_ = kBufferSize;
-            }
-            else
-            {
-                if (_stream.last_error())
-                {
-                    std::cout << "Stream failed " << _stream.last_error() << "\n";
-                }
-
-                break;
-            }
+            auto size = co_await _stream.read_some(buffer);
+            if (size) { size = co_await _stream.write({buffer.data(), (std::size_t) size}); }
         }
     }
 
