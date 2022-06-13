@@ -108,7 +108,7 @@ namespace zab_bm {
         while (!(last_error = _stream.last_error()))
         {
             auto size = co_await _stream.read_some(buffer);
-            if (size) { size = co_await _stream.write({buffer.data(), (std::size_t) size}); }
+            if (size) { co_await _stream.write({buffer.data(), (std::size_t) size}); }
         }
     }
 
